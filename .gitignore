@@ -8,3 +8,6 @@ __pycache__/
 venv/
 .venv/
 .DS_Store
+.env.local
+node_modules/
+convex/_generated/

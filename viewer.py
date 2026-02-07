@@ -2,7 +2,7 @@
 """
 Local web viewer for extracted Telegram channel content.
 Run: python viewer.py  →  open http://127.0.0.1:5001
-When DATABASE_URL is set (e.g. Railway Postgres), reads from database instead of files.
+Priority: CONVEX_URL → DATABASE_URL → local files.
 """
 import json
 import os
@@ -18,6 +18,15 @@ IMAGE_DIR = OUTPUT_DIR / "images"
 TEXT_DIR = OUTPUT_DIR / "text"
 DIST_DIR = BASE_DIR / "viewer-app" / "dist"  # React (shadcn) app build
 CHANNEL_USERNAME = "smlemay"
+CONVEX_URL = os.environ.get("CONVEX_URL")
+EXAMS = [
+    {"id": "smle", "name": "SMLE", "channels": ["smlemay"]},
+    {"id": "sdle", "name": "SDLE", "channels": []},
+    {"id": "sple", "name": "SPLE", "channels": []},
+    {"id": "snle", "name": "SNLE", "channels": []},
+    {"id": "slle", "name": "SLLE", "channels": []},
+    {"id": "family-medicine", "name": "Family Medicine", "channels": []},
+]
 
 OUTPUT_DIR.mkdir(exist_ok=True)
 TEXT_DIR.mkdir(exist_ok=True)
@@ -89,6 +98,13 @@ def index():
 
 @app.route("/api/summary")
 def api_summary():
+    if CONVEX_URL:
+        try:
+            from convex_db import get_summary as convex_get_summary
+            text = convex_get_summary(CHANNEL_USERNAME) or ""
+            return jsonify({"summary": text, "has_data": bool(text.strip())})
+        except Exception:
+            pass
     if os.environ.get("DATABASE_URL"):
         try:
             from db import get_summary
@@ -125,16 +141,7 @@ def _text_from_folder():
     return out
 
 
-@app.route("/api/text_messages")
-def api_text_messages():
-    if os.environ.get("DATABASE_URL"):
-        try:
-            from db import get_text_messages
-            data = get_text_messages()
-            if data is not None:
-                return jsonify(data)
-        except Exception:
-            pass
+def _get_text_messages_list():
     data = _load_json(OUTPUT_DIR / "text_messages.json")
     if not data:
         full = _load_json(OUTPUT_DIR / "messages_full.json")
@@ -155,16 +162,53 @@ def api_text_messages():
             ]
     if not data:
         data = _text_from_folder()
-    return jsonify(data or [])
+    return data or []
+
+
+@app.route("/api/text_messages")
+def api_text_messages():
+    if CONVEX_URL:
+        try:
+            from convex_db import get_text_messages as convex_get_text
+            data = convex_get_text(CHANNEL_USERNAME)
+            if data is not None:
+                return jsonify(data)
+        except Exception:
+            pass
+    if os.environ.get("DATABASE_URL"):
+        try:
+            from db import get_text_messages
+            data = get_text_messages()
+            if data is not None:
+                return jsonify(data)
+        except Exception:
+            pass
+    return jsonify(_get_text_messages_list())
 
 
 @app.route("/api/pdfs")
 def api_pdfs():
+    if CONVEX_URL:
+        try:
+            from convex_db import get_pdfs as convex_get_pdfs
+            data = convex_get_pdfs(CHANNEL_USERNAME)
+            if data is not None:
+                return jsonify(data)
+        except Exception:
+            pass
     return jsonify(_load_json(PDF_DIR / "pdfs_metadata.json"))
 
 
 @app.route("/api/images")
 def api_images():
+    if CONVEX_URL:
+        try:
+            from convex_db import get_images as convex_get_images
+            data = convex_get_images(CHANNEL_USERNAME)
+            if data is not None:
+                return jsonify(data)
+        except Exception:
+            pass
     data = _load_json(IMAGE_DIR / "images_metadata.json")
     if not data:
         data = _images_from_disk()
@@ -174,6 +218,101 @@ def api_images():
 @app.route("/api/full_messages")
 def api_full_messages():
     return jsonify(_load_json(OUTPUT_DIR / "messages_full.json"))
+
+
+@app.route("/api/exams/<exam_id>/content")
+def api_exam_content(exam_id):
+    """Get text messages, PDFs, and images for a specific exam."""
+    exam = next((e for e in EXAMS if e["id"] == exam_id), None)
+    if not exam:
+        return jsonify({"error": "Exam not found"}), 404
+
+    channels = exam["channels"]
+    all_text = []
+    all_pdfs = []
+    all_images = []
+    summary_text = ""
+
+    if CONVEX_URL and channels:
+        try:
+            from convex_db import (
+                get_text_messages as convex_get_text,
+                get_pdfs as convex_get_pdfs,
+                get_images as convex_get_images,
+                get_summary as convex_get_summary,
+            )
+            for ch in channels:
+                t = convex_get_text(ch)
+                if t:
+                    all_text.extend(t)
+                p = convex_get_pdfs(ch)
+                if p:
+                    all_pdfs.extend(p)
+                i = convex_get_images(ch)
+                if i:
+                    all_images.extend(i)
+                s = convex_get_summary(ch)
+                if s:
+                    summary_text += s + "\n"
+        except Exception:
+            pass
+
+    if not all_text and not all_pdfs and not all_images:
+        if channels:
+            all_text = _get_text_messages_list()
+            all_pdfs = _load_json(PDF_DIR / "pdfs_metadata.json")
+            all_images = _load_json(IMAGE_DIR / "images_metadata.json") or _images_from_disk()
+            summary_text = _load_text(OUTPUT_DIR / "summary.txt")
+
+    return jsonify({
+        "text_messages": all_text,
+        "pdfs": all_pdfs,
+        "images": all_images,
+        "summary": summary_text.strip(),
+    })
+
+
+@app.route("/api/exams")
+def api_exams():
+    convex_counts = None
+    if CONVEX_URL:
+        try:
+            from convex_db import get_counts_multi
+            all_channels = [ch for exam in EXAMS for ch in exam["channels"]]
+            if all_channels:
+                convex_counts = get_counts_multi(all_channels)
+        except Exception:
+            pass
+
+    if convex_counts is None:
+        text_count = len(_get_text_messages_list())
+        pdfs_count = len(_load_json(PDF_DIR / "pdfs_metadata.json"))
+        images_count = len(_load_json(IMAGE_DIR / "images_metadata.json")) or len(_images_from_disk())
+
+    exams = []
+    for exam in EXAMS:
+        if convex_counts is not None:
+            counts = {"text": 0, "pdfs": 0, "images": 0}
+            for ch in exam["channels"]:
+                ch_counts = convex_counts.get(ch, {})
+                counts["text"] += ch_counts.get("text", 0)
+                counts["pdfs"] += ch_counts.get("pdfs", 0)
+                counts["images"] += ch_counts.get("images", 0)
+        else:
+            has_channels = len(exam["channels"]) > 0
+            counts = {
+                "text": text_count if has_channels else 0,
+                "pdfs": pdfs_count if has_channels else 0,
+                "images": images_count if has_channels else 0,
+            }
+        exams.append({
+            "id": exam["id"],
+            "name": exam["name"],
+            "channels": exam["channels"],
+            "status": "active",
+            "counts": counts,
+        })
+    return jsonify(exams)
 
 
 @app.route("/files/pdfs/<path:filename>")

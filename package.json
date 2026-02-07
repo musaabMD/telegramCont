@@ -1,0 +1,24 @@
+{
+  "name": "telegramscr",
+  "version": "1.0.0",
+  "description": "Telegram channel extractor and web viewer. When `DATABASE_URL` is set (e.g. Railway Postgres), the viewer reads from the database and the extractor writes to it.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/musaabMD/telegramCont.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/musaabMD/telegramCont/issues"
+  },
+  "homepage": "https://github.com/musaabMD/telegramCont#readme",
+  "dependencies": {
+    "convex": "^1.31.7"
+  }
+}

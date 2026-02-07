@@ -85,7 +85,12 @@ async def run():
         len(messages_full),
     )
 
-    if os.environ.get("DATABASE_URL"):
+    if os.environ.get("CONVEX_URL"):
+        from convex_db import save_text_messages as convex_save, save_summary as convex_save_summary
+        convex_save(CHANNEL_USERNAME, text_entries)
+        convex_save_summary(CHANNEL_USERNAME, summary_text)
+        print("Done. Text messages: %d | Full records: %d → saved to Convex." % (len(text_entries), len(messages_full)))
+    elif os.environ.get("DATABASE_URL"):
         from db import init_tables, save_text_messages
         init_tables()
         save_text_messages(text_entries, summary_text)
