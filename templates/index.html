@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Extracted Channel Content</title>
+  <style>
+    :root { --bg: #0f0f12; --card: #1a1a20; --text: #e4e4e7; --muted: #71717a; --accent: #3b82f6; --border: #27272a; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .tabs button { padding: 0.5rem 1rem; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; cursor: pointer; }
+    .tabs button:hover, .tabs button.active { background: var(--accent); border-color: var(--accent); }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .panel pre { background: var(--card); padding: 1rem; border-radius: 8px; overflow: auto; white-space: pre-wrap; font-size: 0.85rem; border: 1px solid var(--border); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
+    .card a { color: var(--accent); }
+    .msg-text { margin: 0.5rem 0; }
+    .meta { color: var(--muted); font-size: 0.85rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+    .grid img { width: 100%; height: 180px; object-fit: cover; border-radius: 8px; display: block; }
+    .empty { color: var(--muted); padding: 2rem; text-align: center; }
+    .loading { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Extracted Channel Content</h1>
+  <p class="sub">Browse text messages, PDFs, and images from the extracted Telegram channel.</p>
+  <div class="tabs">
+    <button data-tab="summary" class="active">Summary</button>
+    <button data-tab="text">Text messages</button>
+    <button data-tab="pdfs">PDFs</button>
+    <button data-tab="images">Images</button>
+  </div>
+  <div id="summary" class="panel active"><div id="summary-content" class="loading">Loading…</div></div>
+  <div id="text" class="panel"><div id="text-content" class="loading">Loading…</div></div>
+  <div id="pdfs" class="panel"><div id="pdfs-content" class="loading">Loading…</div></div>
+  <div id="images" class="panel"><div id="images-content" class="loading">Loading…</div></div>
+  <script>
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById(btn.dataset.tab).classList.add('active');
+      });
+    });
+    async function load(path) { const r = await fetch(path); return r.ok ? r.json() : null; }
+    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function formatBytes(n) { if (n == null) return ''; if (n < 1024) return n + ' B'; if (n < 1024*1024) return (n/1024).toFixed(1)+' KB'; return (n/(1024*1024)).toFixed(2)+' MB'; }
+    (async () => {
+      const d = await load('/api/summary');
+      document.getElementById('summary-content').innerHTML = d && d.summary
+        ? '<pre>' + escapeHtml(d.summary) + '</pre>'
+        : '<p class="empty">No summary yet. Run python main.py or extract_text_only.py first.</p>';
+    })();
+    (async () => {
+      const data = await load('/api/text_messages');
+      const el = document.getElementById('text-content');
+      if (!data || data.length === 0) { el.innerHTML = '<p class="empty">No text messages.</p>'; return; }
+      el.innerHTML = data.map(m => '<div class="card"><div class="meta">#'+m.id+' · Posted: '+(m.date||'—')+(m.views?' · '+m.views+' views':'')+(m.is_caption?' · caption':'')+'</div><div class="msg-text">'+escapeHtml(m.text||'').replace(/\n/g,'<br>')+'</div>'+(m.link?'<a href="'+m.link+'" target="_blank" rel="noopener">Open in Telegram</a>':'')+'</div>').join('');
+    })();
+    (async () => {
+      const data = await load('/api/pdfs');
+      const el = document.getElementById('pdfs-content');
+      if (!data || data.length === 0) { el.innerHTML = '<p class="empty">No PDFs.</p>'; return; }
+      el.innerHTML = data.map(p => '<div class="card"><strong>'+escapeHtml(p.original_name||p.filename||'PDF')+'</strong><div class="meta">Posted: '+(p.date||'—')+' · '+formatBytes(p.file_size)+'</div><a href="/files/pdfs/'+encodeURIComponent(p.filename)+'" target="_blank">Download / Open PDF</a>'+(p.link?' · <a href="'+p.link+'" target="_blank" rel="noopener">Telegram</a>':'')+'</div>').join('');
+    })();
+    (async () => {
+      const data = await load('/api/images');
+      const el = document.getElementById('images-content');
+      if (!data || data.length === 0) { el.innerHTML = '<p class="empty">No images.</p>'; return; }
+      el.innerHTML = '<div class="grid">'+data.map(img => '<div><a href="/files/images/'+encodeURIComponent(img.filename)+'" target="_blank"><img src="/files/images/'+encodeURIComponent(img.filename)+'" alt="" loading="lazy"></a><div class="meta">Posted: '+(img.date||'—')+(img.file_size?' · '+formatBytes(img.file_size):'')+'</div>'+(img.caption?'<div style="font-size:0.85rem;margin-top:0.25rem">'+escapeHtml(img.caption).slice(0,80)+(img.caption.length>80?'…':'')+'</div>':'')+(img.link?'<a href="'+img.link+'" target="_blank" rel="noopener">Telegram</a>':'')+'</div>').join('')+'</div>';
+    })();
+  </script>
+</body>
+</html>

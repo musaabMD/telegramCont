@@ -1,0 +1,17 @@
+# Build Python (Flask) + Node (React viewer-app) so dist/ exists on deploy.
+providers = ["python", "node"]
+
+[phases.setup]
+nixPkgs = ["nodejs", "python311"]
+
+[phases.install]
+cmds = [
+  "pip install -r requirements.txt",
+  "cd viewer-app && npm ci"
+]
+
+[phases.build]
+cmds = ["cd viewer-app && npm run build"]
+
+[variables]
+NIXPACKS_PYTHON_VERSION = "3.11"
