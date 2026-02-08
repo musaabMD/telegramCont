@@ -158,3 +158,56 @@ def save_images_metadata(channel: str, images: list):
             "mutations:saveImagesMetadata",
             {"channel": channel, "images": batch},
         )
+
+
+# ── Scrape Log ──────────────────────────────────────────────
+
+def get_last_scrape(channel: str):
+    """Get the last scrape log for a channel. Returns dict with last_message_date or None."""
+    client = get_client()
+    if not client:
+        return None
+    return client.query("mutations:getLastScrape", {"channel": channel})
+
+
+def update_scrape_log(channel: str, last_message_date: str, messages_scraped: int):
+    """Update the scrape log after a successful scrape."""
+    client = get_client()
+    if not client:
+        return
+    client.mutation(
+        "mutations:updateScrapeLog",
+        {
+            "channel": channel,
+            "last_message_date": last_message_date,
+            "messages_scraped": messages_scraped,
+        },
+    )
+
+
+# ── Channel Health ──────────────────────────────────────────
+
+def save_channel_health(channel: str, status: str, message_count=None, latest_messages=None, error=None):
+    """Save channel health check result to Convex."""
+    client = get_client()
+    if not client:
+        return
+    data = {
+        "channel": channel,
+        "status": status,
+    }
+    if message_count is not None:
+        data["message_count"] = message_count
+    if latest_messages is not None:
+        data["latest_messages"] = latest_messages
+    if error is not None:
+        data["error"] = error
+    client.mutation("mutations:saveChannelHealth", data)
+
+
+def get_exam_channels():
+    """Get all exams and their channels from Convex."""
+    client = get_client()
+    if not client:
+        return []
+    return client.query("exams:list", {})
