@@ -53,6 +53,7 @@ export const update = mutation({
     status: v.optional(v.string()),
     inclusion_criteria: v.optional(v.array(v.string())),
     exclusion_criteria: v.optional(v.array(v.string())),
+    ai_prompt: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...fields } = args;
